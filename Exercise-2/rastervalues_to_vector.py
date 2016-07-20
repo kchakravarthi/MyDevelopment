@@ -4,7 +4,7 @@ Created on Wed Jul 20 10:35:39 2016
 
 @author: Kalyan
 
-Extraction of raster values to point vector shapefile
+Extraction of raster values to point vector shapefile and add values as attribute
 """
 from osgeo import gdal, ogr
 import struct
@@ -14,7 +14,7 @@ in_shp = "E:/Python_Learning/Exercise/BGNIR_points.shp"
 #Input raster file Location
 in_raster = "E:/Python_Learning/Exercise/BGNIR.tif"
 
-
+#Function for extract pixel values to vector shapefile
 def ExtractPixelValue(in_shp, in_raster): 
     #Open Raster Layer    
     raster = gdal.Open(in_raster)
