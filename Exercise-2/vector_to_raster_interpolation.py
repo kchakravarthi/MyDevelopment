@@ -29,9 +29,9 @@ feature_count = in_layer.GetFeatureCount()
 lon, lat, val = [], [], []
 for feature in in_layer:
     geom =feature.GetGeometryRef()
-    xy = geom.GetPoint()
-    lon.append(float(xy[0]))
-    lat.append(float(xy[1]))
+    x, y = geom.GetX(), geom.GetY()
+    lon.append(float(x))
+    lat.append(float(y))
 for i in range(feature_count):
     feature = in_layer.GetFeature(i)
     values = feature.GetField(attribute)
