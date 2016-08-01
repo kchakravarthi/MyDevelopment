@@ -7,81 +7,64 @@ Created on Thu Jul 28 11:15:04 2016
 extraction of raster statistics to polygon vector (zonal statistics)
 """
 
-
 from osgeo import gdal, ogr
-#from osgeo.gdalconst import *
 import numpy as np
-#import sys
-gdal.PushErrorHandler('CPLQuietErrorHandler')
 
 
-def bbox_to_pixel_offsets(gt, bbox):
-    originX = gt[0]
-    originY = gt[3]
-    pixel_width = gt[1]
-    pixel_height = gt[5]
-    x1 = int((bbox[0] - originX) / pixel_width)
-    x2 = int((bbox[1] - originX) / pixel_width)
+def extent_to_pixel_offsets(geotrans, extent):
+    originX = geotrans[0]
+    originY = geotrans[3]
+    pixel_width = geotrans[1]
+    pixel_height = geotrans[5]
+    x1 = int((extent[0] - originX) / pixel_width)
+    x2 = int((extent[1] - originX) / pixel_width) + 1
 
-    y1 = int((bbox[3] - originY) / pixel_height)
-    y2 = int((bbox[2] - originY) / pixel_height)
+    y1 = int((extent[3] - originY) / pixel_height)
+    y2 = int((extent[2] - originY) / pixel_height) + 1
 
     xsize = x2 - x1
     ysize = y2 - y1
     return (x1, y1, xsize, ysize)
 
-def zonal_stats(shapefile, raster, nodata_value=None, global_src_extent=False):
-    in_ras = gdal.Open(raster)
-    assert(in_ras)
-    in_band = in_ras.GetRasterBand(1)
-    ras_geo = in_ras.GetGeoTransform()
 
-    if nodata_value:
+def zonal_stats(shapefile, raster):
+    in_ras = gdal.Open(raster) #Open raster
+    in_band = in_ras.GetRasterBand(1) #Open raster band1
+    ras_geotrans = in_ras.GetGeoTransform() #Get geotransform
+
+    '''if nodata_value:
         nodata_value = float(nodata_value)
-        in_band.SetNoDataValue(nodata_value)
+        in_band.SetNoDataValue(nodata_value)'''
 
-    in_shp = ogr.Open(shapefile, 1)  # TODO maybe open update if we want to write stats
+    in_shp = ogr.Open(shapefile, 1)  #open to write stats
     assert(in_shp)
-    in_layer = in_shp.GetLayer(0)
+    in_lyr = in_shp.GetLayer(0) #Get layer of shapefile
+    #Define fileds and create fields to write stats    
     field1, field2, field3, field4, field5, field6 = "MIN", "MAX", "MEAN", "STD", "SUM", "COUNT"
     fd1 = ogr.FieldDefn(field1)
-    in_layer.CreateField(fd1)
+    in_lyr.CreateField(fd1)
     fd2 = ogr.FieldDefn(field2)
-    in_layer.CreateField(fd2)
+    in_lyr.CreateField(fd2)
     fd3 = ogr.FieldDefn(field3)
-    in_layer.CreateField(fd3)
+    in_lyr.CreateField(fd3)
     fd4 = ogr.FieldDefn(field4)
-    in_layer.CreateField(fd4)
+    in_lyr.CreateField(fd4)
     fd5 = ogr.FieldDefn(field5)
-    in_layer.CreateField(fd5)
+    in_lyr.CreateField(fd5)
     fd6 = ogr.FieldDefn(field6)
-    in_layer.CreateField(fd6)
-
-    # create an in-memory numpy array of the source raster data
-    # covering the whole extent of the vector layer
-    if global_src_extent:
-        # use global source extent
-        src_offset = bbox_to_pixel_offsets(ras_geo, in_layer.GetExtent())
-        src_array = in_band.ReadAsArray(*src_offset)
-
-        # calculate new geotransform of the layer subset
-        new_gt = ((ras_geo[0] + (src_offset[0] * ras_geo[1])), ras_geo[1], 0.0,(ras_geo[3] + (src_offset[1] * ras_geo[5])), 0.0, ras_geo[5])
+    in_lyr.CreateField(fd6)
 
     mem_drv = ogr.GetDriverByName('Memory')
     driver = gdal.GetDriverByName('MEM')
 
     # Loop through vectors
-#    stats = []
-    feat = in_layer.GetNextFeature()
+    feat = in_lyr.GetNextFeature()
     while feat is not None:
+        ras_offset = extent_to_pixel_offsets(ras_geotrans, feat.geometry().GetEnvelope())
+        ras_array = in_band.ReadAsArray(*ras_offset)
 
-        if not global_src_extent:
-            # use local source extent
-            src_offset = bbox_to_pixel_offsets(ras_geo, feat.geometry().GetEnvelope())
-            src_array = in_band.ReadAsArray(*src_offset)
-
-            # calculate new geotransform of the feature subset
-            new_gt = ((ras_geo[0] + (src_offset[0] * ras_geo[1])),ras_geo[1], 0.0, (ras_geo[3] + (src_offset[1] * ras_geo[5])),0.0, ras_geo[5])
+        # calculate new geotransform of the feature subset
+        new_geotrans = ((ras_geotrans[0] + (ras_offset[0] * ras_geotrans[1])),ras_geotrans[1],0.0,(ras_geotrans[3] + (ras_offset[1] * ras_geotrans[5])),0.0,ras_geotrans[5])          
 
         # Create a temporary vector layer in memory
         temp_shp = mem_drv.CreateDataSource('out')
@@ -89,40 +72,40 @@ def zonal_stats(shapefile, raster, nodata_value=None, global_src_extent=False):
         temp_layer.CreateFeature(feat.Clone())
 
         # Rasterize it
-        temp_data = driver.Create('', src_offset[2], src_offset[3], 1, gdal.GDT_Float32)
-        temp_data.SetGeoTransform(new_gt)
-        gdal.RasterizeLayer(temp_data, [1], temp_layer, burn_values=[1])
-        rv_array = temp_data.ReadAsArray()
+        temp_ras = driver.Create('', ras_offset[2], ras_offset[3], 1, gdal.GDT_Float32)
+        temp_ras.SetGeoTransform(new_geotrans)
+        gdal.RasterizeLayer(temp_ras, [1], temp_layer, burn_values=[1])
+        rasterize_array = temp_ras.ReadAsArray()
 
         # Mask the source data array with our current feature
-        # we take the logical_not to flip 0<->1 to get the correct mask effect
-        # we also mask out nodata values explictly
-        masked = np.ma.MaskedArray(src_array, mask=np.logical_or(src_array == nodata_value, np.logical_not(rv_array)))        
+        masked = np.ma.MaskedArray(ras_array,mask=np.logical_not(rasterize_array))
+        #Extract stats and write into shapefile
         val1 = float(masked.min())
         val2 = float(masked.max())
         val3 = float(masked.mean())
         val4 = float(masked.std())
         val5 = float(masked.sum())
         val6 = float(masked.count())
-#   print val1, val2, val3, val4
+
         feat.SetField(field1, val1)
         feat.SetField(field2, val2)
         feat.SetField(field3, val3)
         feat.SetField(field4, val4)
         feat.SetField(field5, val5)
         feat.SetField(field6, val6)
-        in_layer.SetFeature(feat)
-
-        temp_data = None
+        in_lyr.SetFeature(feat)
+        
+        temp_ras = None
         temp_shp = None
-        feat = in_layer.GetNextFeature()
-
-
+        feat = in_lyr.GetNextFeature()
+    
+    #Close data
     in_shp = None
     in_ras = None
-#    return stats
-    
+
+#in put shapefile
 shapefile = "E:/Python_Learning/Exercise/Zonalstats/BGNIR_resample_clip.shp"
+#input vector
 raster = "E:/Python_Learning/Exercise/VI.tif"
 
-zonal_stats(shapefile, raster, nodata_value=None, global_src_extent=False)
+zonal_stats(shapefile, raster)
