@@ -15,7 +15,6 @@ in_shp = "E:/Python_Learning/Exercise/BGNIR_points.shp"
 in_raster = "E:/Python_Learning/Exercise/BGNIR.tif"
 
 #Function for extract pixel values to vector shapefile
-#Function for extract pixel values to vector shapefile
 def ExtractPixelValue(in_shp, in_raster): 
     #Open Raster Layer    
     raster = gdal.Open(in_raster)
